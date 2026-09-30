@@ -1,201 +1,214 @@
-# kassy
+# kassy — гайд по деплою
 
-Калькулятор экономики касс самообслуживания (Альфа-Банк): стартовый экран, 5 экранов калькулятора, отправка расчёта на email и сохранение заявок в Supabase.
+Калькулятор касс самообслуживания (Альфа-Банк): лендинг, 5 шагов расчёта, письмо на почту, заявки в базу.
+
+Репозиторий: [github.com/Axer-me/kassy-deploy](https://github.com/Axer-me/kassy-deploy)
+
+**Стек продакшена**
+
+| Часть | Где |
+|-------|-----|
+| Сайт и API | [Vercel](https://vercel.com) → ссылка `https://….vercel.app` |
+| Заявки (статистика) | [Supabase](https://supabase.com), таблица `form_submissions` |
+| Письма | SMTP (Yandex или Gmail, пароль приложения) |
+
+Turso в этой версии **не используется**. `.env` в git **не класть**.
+
+```
+Посетитель
+  →  Vercel (index.html + картинки)
+  →  POST /api/send-calculation
+        → SMTP → письмо клиенту
+        → Supabase → строка в form_submissions
+```
 
 ---
 
-## Архитектура
+## Что подготовить заранее
 
-```
-Браузер  →  Vercel CDN (index.html + assets/)
-         →  Vercel Serverless (api/send-calculation.js)
-                ├── Nodemailer → SMTP → email клиенту
-                └── Supabase  → form_submissions
-```
+1. Аккаунт [GitHub](https://github.com) — код уже лежит в `Axer-me/kassy-deploy`.
+2. Аккаунт [Vercel](https://vercel.com) (Hobby), вход через GitHub.
+3. Аккаунт [Supabase](https://supabase.com) (бесплатный проект).
+4. Почта с SMTP: пароль **приложения**, не обычный пароль от ящика.
 
-- **Фронтенд** — один `index.html`: стартовый экран + калькулятор (5 экранов, CSS-only навигация). На экране количества касс можно ввести число с клавиатуры (на телефоне — цифровая). Интерфейс растягивается на весь экран (киоск 1920×1080, iPad, смартфон).
-- **Бэкенд** — serverless-функция `api/send-calculation.js` (Vercel, Node.js).
-- **БД** — Supabase (PostgreSQL), таблица `form_submissions`.
-- **Локальная разработка** — `server.js` (Express), запуск из корня проекта.
+Панели Vercel/Supabase с компьютера в РФ иногда не открываются. Сайт для заказчика — это `*.vercel.app`; его visiter открывает без кабинета.
 
 ---
 
-## Быстрый старт (локально)
+## Шаг 1. Supabase (база заявок)
 
-```bash
-npm install
-cp .env.example .env   # заполнить SMTP и Supabase
-npm start
-```
+### 1.1. Проект
 
-Откройте http://localhost:3456/
+1. [supabase.com](https://supabase.com) → Sign up.
+2. **New project**: имя `kassy`, пароль базы сохраните, регион — Европа (Frankfurt), если есть.
+3. Дождитесь статуса Ready.
 
-**iPhone / iPad** (та же Wi-Fi сеть):
-```bash
-# Windows PowerShell
-$env:HOST="0.0.0.0"; npm start
-```
-Узнайте IP (`ipconfig`) и откройте в Safari `http://192.168.x.x:3456/`.
+### 1.2. Таблица
 
----
-
-## Структура
-
-| Файл / папка | Назначение |
-|---|---|
-| `index.html` | Стартовый экран + 5 экранов калькулятора + вся логика на клиенте |
-| `assets/` | Изображение кассы на стартовом экране |
-| `favicon.svg` | Логотип Альфа-Банк, иконка вкладки |
-| `api/send-calculation.js` | Vercel serverless: отправка email + запись в Supabase |
-| `server.js` | Express-сервер для локальной разработки |
-| `.env.example` | Шаблон переменных окружения |
-| `vercel.json` | Конфиг деплоя (Node.js runtime) |
-| `supabase-schema.sql` | SQL для создания таблицы в Supabase |
-
----
-
-## Переменные окружения
-
-Скопируйте `.env.example` → `.env` и заполните:
-
-```env
-# SMTP (обязательно)
-SMTP_HOST=smtp.yandex.ru
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your@yandex.ru
-SMTP_PASS=your_app_password
-SMTP_FROM=Альфа-Банк <your@yandex.ru>
-
-# Supabase (обязательно для сохранения заявок)
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_KEY=eyJhbGc...   # service_role key, не anon!
-
-# Локальный сервер
-PORT=3456
-```
-
-На **Vercel**: Settings → Environment Variables → добавить те же ключи.
-
----
-
-## Настройка Supabase
-
-1. Создайте проект на [supabase.com](https://supabase.com).
-2. Выполните [`supabase-schema.sql`](supabase-schema.sql) в **SQL Editor**:
+**SQL Editor** → New query → вставить и **Run**:
 
 ```sql
 CREATE TABLE IF NOT EXISTS form_submissions (
-  id              BIGSERIAL PRIMARY KEY,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  name            TEXT NOT NULL,
-  company         TEXT,
-  phone           TEXT NOT NULL,
-  email           TEXT NOT NULL,
+  id          BIGSERIAL PRIMARY KEY,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  name        TEXT NOT NULL,
+  company     TEXT,
+  phone       TEXT NOT NULL,
+  email       TEXT NOT NULL,
   calculation_json JSONB
 );
+
 ALTER TABLE form_submissions ENABLE ROW LEVEL SECURITY;
 ```
 
-3. Получите ключи: **Settings → API**:
-   - `Project URL` → `SUPABASE_URL`
-   - `service_role` (secret) → `SUPABASE_SERVICE_KEY`
+Должно быть Success. Тот же SQL лежит в репозитории: [`supabase-schema.sql`](supabase-schema.sql).
 
-Просматривать заявки: **Table Editor → form_submissions**.
+RLS включён специально: с браузера таблицу не читают, пишет только сервер с секретным ключом.
+
+### 1.3. Ключи
+
+**Project Settings → API** (или **Data API**):
+
+| В кабинете | Переменная |
+|------------|------------|
+| Project URL `https://xxxx.supabase.co` | `SUPABASE_URL` |
+| `service_role` (**secret**), не `anon` | `SUPABASE_SERVICE_KEY` |
+
+`service_role` — полный доступ к базе. Только в Vercel / локальный `.env`.
+
+Заявки смотреть: **Table Editor → form_submissions**.
 
 ---
 
-## Настройка SMTP
+## Шаг 2. SMTP (письма)
 
-| Провайдер | SMTP-хост | Порт | Лимит |
-|---|---|---|---|
-| **Yandex** (рекомендуется) | `smtp.yandex.ru` | 465 | ~300/день |
-| Gmail | `smtp.gmail.com` | 465 | ~500/день |
-| Mail.ru | `smtp.mail.ru` | 465 | ~100–300/день |
+Нужен пароль приложения.
 
-> Для больших объёмов: SendPulse, Brevo, Amazon SES.
+**Yandex** (часто проще из РФ):
 
-**Yandex:**
-1. Включите SMTP: [Настройки → Почтовые программы](https://mail.yandex.ru/?#setup/client).
-2. Создайте пароль приложения: [id.yandex.ru → Безопасность → Пароли приложений](https://id.yandex.ru/security/app-passwords).
-3. Используйте этот пароль в `SMTP_PASS` — не пароль от сайта.
+1. Включить IMAP/SMTP: [Почтовые программы](https://mail.yandex.ru/?#setup/client).
+2. [Пароль приложения](https://id.yandex.ru/security/app-passwords).
+3. Хост `smtp.yandex.ru`, порт `465`, `SMTP_SECURE=true`.
 
 **Gmail:**
-1. Включите двухфакторную аутентификацию.
-2. Создайте пароль приложения: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+
+1. Включить 2FA.
+2. [Пароль приложения](https://myaccount.google.com/apppasswords).
+3. Хост `smtp.gmail.com`, порт `465`, `SMTP_SECURE=true`.
+
+`SMTP_FROM` можно так: `Альфа-Банк <ваш@ящик>`.
 
 ---
 
-## Деплой на Vercel
+## Шаг 3. Vercel (публичная ссылка)
 
-1. Подключите репозиторий на [vercel.com](https://vercel.com) → **Import Project**.
-2. **Root Directory** — корень репозитория (`kassy-deploy (root)`), не вложенная папка.
-3. Добавьте переменные окружения (Settings → Environment Variables).
-4. Deploy — статика и `api/` задеплоятся автоматически.
+Код уже на GitHub. Если правили локально — `git push` в `kassy-deploy`.
 
-**Диагностика** (если заявки не пишутся в БД): Vercel → **Logs**, фильтр `[supabase]`:
-- `[supabase] submission logged: email` — всё работает
-- `[supabase] insert error: ...` — ошибка вставки
-- `[supabase] not configured` — не заданы env vars
+### 3.1. Import
+
+1. [vercel.com/new](https://vercel.com/new) → Import **`Axer-me/kassy-deploy`**.
+2. Экран New Project:
+
+| Поле | Значение |
+|------|----------|
+| Vercel Team | свой Hobby, не трогать |
+| Project Name | `kassy-deploy` или любое |
+| **Root Directory** | **`kassy-deploy (root)`** — первая строка. Не `api`, не `kassa-email-server` |
+| Application Preset | **Other** или оставить авто. Не обязательно Express |
+
+3. Раскрыть **Environment Variables** и добавить **до** Create Project (иначе потом Redeploy):
+
+| Имя | Пример |
+|-----|--------|
+| `SMTP_HOST` | `smtp.gmail.com` или `smtp.yandex.ru` |
+| `SMTP_PORT` | `465` |
+| `SMTP_SECURE` | `true` |
+| `SMTP_USER` | ваш ящик |
+| `SMTP_PASS` | пароль приложения |
+| `SMTP_FROM` | `Альфа-Банк <ваш@ящик>` |
+| `SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | ключ `service_role` |
+
+Environment: Production (и Preview, если превью тоже должно писать в ту же базу).
+
+4. **Build and Output Settings** не менять.
+5. **Create Project**.
+
+Через 1–2 минуты будет `https://kassy-deploy-xxxx.vercel.app`.
+
+Если переменные добавили **после** первого деплоя: Settings → Environment Variables → Deployments → ⋯ → **Redeploy**.
+
+Если Root Directory ошибочно `kassa-email-server`: Settings → General → Root Directory → корень → Redeploy.
 
 ---
 
-## API
+## Шаг 4. Проверка
 
-| Метод | URL | Описание |
-|---|---|---|
-| `POST` | `/api/send-calculation` | Валидация → email → запись в Supabase |
+1. Открыть `https://….vercel.app` (из РФ `*.vercel.app` чаще открывается без VPN).
+2. Калькулятор до формы → свой email → «Получить расчёт».
+3. Почта и папка «Спам».
+4. Supabase → Table Editor → `form_submissions` — новая строка.
+5. Подождать 15 минут, обновить таблицу — строка **остаётся** (это облако, не диск Vercel).
 
-Тело запроса:
+Логи: Vercel → Deployment → Logs.
 
-```json
-{
-  "name": "Иванов Иван Иванович",
-  "company": "ООО Пример",
-  "phone": "+7 (900) 000-00-00",
-  "email": "client@example.com",
-  "calculation": {
-    "registers": 50,
-    "years": 3,
-    "yearsLabel": "3 года",
-    "purchaseTotalFormatted": "...",
-    "purchaseLines": [...],
-    "subscriptionMonthlyLines": [...],
-    "..."  : "остальные поля из runCalculation()"
-  }
-}
+| В логе | Смысл |
+|--------|--------|
+| `[supabase] submission logged:` | заявка записана |
+| `[supabase] not configured` | нет URL или service_role на Vercel |
+| `[supabase] insert error:` | таблица не создана / неверный ключ / RLS без service_role |
+| ошибка SMTP / `535` | пароль приложения или хост |
+
+---
+
+## Локальный запуск (не обязательно для прода)
+
+```powershell
+cd путь\к\kassy-deploy
+npm install
+copy .env.example .env
 ```
 
----
+Заполнить SMTP и Supabase в `.env`. Затем:
 
-## Формула расчёта
+```powershell
+npm start
+```
 
-| Метрика | Формула |
-|---|---|
-| Покупка за период | (стоимость КСО + допы) × кол-во + сервис 4 000 ₽/мес × срок |
-| Подписка за период | тариф/мес × кол-во × месяцы |
-| Остаётся в обороте | сумма покупки − первый платёж по подписке |
-| Экономия за период | покупка − подписка |
+http://localhost:3456/
 
----
+С телефона в той же Wi‑Fi:
 
-## Валидация формы
+```powershell
+$env:HOST="0.0.0.0"; npm start
+```
 
-| Поле | Правила |
-|---|---|
-| ФИО | Только буквы (включая кириллицу), пробел, дефис, точка; 2–100 символов |
-| Компания | Обязательное, до 150 символов |
-| Телефон | Маска `+7 (XXX) XXX-XX-XX`; ровно 11 цифр |
-| Email | Regex; TLD ≥ 2 символа |
+IP в `ipconfig` → `http://192.168.x.x:3456/`.
 
 ---
 
-## Типичные ошибки
+## Что не делать
 
-| Симптом | Решение |
-|---|---|
-| «Не задана переменная SMTP_*» | Не создан или пустой `.env` / не добавлены env vars в Vercel |
-| `Invalid login` / `535` | Нужен **пароль приложения**, не пароль от сайта |
-| Письма не доходят | Проверьте «Спам»; не шлите много одинаковых подряд |
-| Заявки не пишутся в Supabase | Проверьте Vercel Logs `[supabase]`; убедитесь что таблица создана и ключ `service_role` |
-| `Function Runtimes must have a valid version` | В `vercel.json` удалите `"runtime": "nodejs20.x"` — версия берётся из `engines` в `package.json` |
+- Не коммитить `.env`.
+- Не вешать свой `.ru` напрямую на DNS Vercel — из РФ кастомный домен часто рвётся; для демо достаточно `*.vercel.app`.
+- Не использовать ключ `anon` вместо `service_role`.
+- Не выбирать Root Directory папку `api`.
+
+---
+
+## Обновления сайта
+
+Правите код → `git push` в `kassy-deploy` → Vercel пересобирает сам. Заказчику давайте **Production** URL, не Preview (`*-git-*.vercel.app`).
+
+---
+
+## Частые ошибки
+
+| Симптом | Что сделать |
+|---------|-------------|
+| 404 / пустой сайт | Root Directory = корень репозитория |
+| Форма: нет SMTP_* | переменные в Vercel + Redeploy |
+| `535` / Invalid login | пароль приложения, хост совпадает с почтой |
+| Письма нет, заявка в таблице есть | «Спам»; SMTP с IP Vercel |
+| Письмо есть, таблицы пустые | `SUPABASE_*`, SQL таблицы, ключ service_role, Redeploy |
+| `*.vercel.app` не открывается у части провайдеров РФ | другой интернет; свой домен на Vercel не панацея |
