@@ -114,7 +114,7 @@ RLS включён специально: с браузера таблицу не
 | Vercel Team | свой Hobby, не трогать |
 | Project Name | `kassy-deploy` или любое |
 | **Root Directory** | **`kassy-deploy (root)`** — первая строка. Не `api`, не `kassa-email-server` |
-| Application Preset | **Other** или оставить авто. Не обязательно Express |
+| Application Preset | **Other**. Жёлтое предупреждение про mismatch после правки репо уйдёт: локальный сервер больше не называется `server.js` |
 
 3. Раскрыть **Environment Variables** и добавить **до** Create Project (иначе потом Redeploy):
 
