@@ -1030,6 +1030,35 @@
     }
 
     @media (max-width: 600px), (max-height: 640px) and (max-width: 1023px) {
+      /* iOS: nested overflow:hidden + inner scroll often cannot reach the bottom buttons.
+         Unlock document scroll on phones only (kiosk 1920×1080 does not match). */
+      html {
+        height: auto;
+      }
+
+      body {
+        display: block;
+        height: auto;
+        min-height: 100svh;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .ipad {
+        display: block;
+        height: auto;
+        min-height: 100svh;
+        overflow: visible;
+      }
+
+      .screen {
+        flex: none;
+        height: auto;
+        min-height: 100svh;
+        overflow: visible;
+      }
+
       .comparison {
         flex: 0 0 auto;
         min-height: auto;
@@ -1045,14 +1074,11 @@
       }
 
       .screen-4-actions {
-        position: sticky;
-        bottom: 0;
-        z-index: 6;
+        position: static;
         flex-shrink: 0;
-        background: var(--bg);
-        margin-top: 8px;
-        padding-top: 10px;
-        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        margin-top: 16px;
+        padding-top: 8px;
+        padding-bottom: max(28px, env(safe-area-inset-bottom));
       }
     }
 
