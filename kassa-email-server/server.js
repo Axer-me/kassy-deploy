@@ -1,17 +1,20 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
 const app = express();
 const PORT = process.env.PORT || 3456;
 const ROOT = path.join(__dirname, '..');
-const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'submissions.db');
+const isVercel = Boolean(process.env.VERCEL);
+const localDbPath = process.env.DATABASE_PATH || path.join(__dirname, 'submissions.db');
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
@@ -20,10 +23,38 @@ app.use(express.static(ROOT));
 function requireEnv(name) {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`Не задана переменная окружения ${name}. Скопируйте .env.example в .env и заполните SMTP-данные.`);
+    throw new Error(`Не задана переменная окружения ${name}. Скопируйте .env.example в .env и заполните данные.`);
   }
   return value;
 }
+
+function createDb() {
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+  if (url) {
+    if (!authToken) {
+      throw new Error('Задана TURSO_DATABASE_URL, но нет TURSO_AUTH_TOKEN.');
+    }
+    return createClient({ url, authToken });
+  }
+  if (isVercel) {
+    throw new Error('На Vercel задайте TURSO_DATABASE_URL и TURSO_AUTH_TOKEN — иначе заявки не сохранятся.');
+  }
+  return createClient({ url: pathToFileURL(localDbPath).href });
+}
+
+const db = createDb();
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS form_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    name TEXT NOT NULL,
+    company TEXT,
+    phone TEXT NOT NULL,
+    email TEXT NOT NULL,
+    calculation_json TEXT
+  )
+`);
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -42,24 +73,6 @@ function createTransporter() {
 
 const transporter = createTransporter();
 const smtpFrom = process.env.SMTP_FROM || requireEnv('SMTP_USER');
-
-const db = new Database(DB_PATH);
-db.exec(`
-  CREATE TABLE IF NOT EXISTS form_submissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    name TEXT NOT NULL,
-    company TEXT,
-    phone TEXT NOT NULL,
-    email TEXT NOT NULL,
-    calculation_json TEXT
-  )
-`);
-
-const insertSubmission = db.prepare(`
-  INSERT INTO form_submissions (name, company, phone, email, calculation_json)
-  VALUES (@name, @company, @phone, @email, @calculation_json)
-`);
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -255,13 +268,11 @@ function buildEmailHtml({ name, company, phone, calculation: c }) {
 </html>`;
 }
 
-function logSubmission({ name, company, phone, email, calculation }) {
-  insertSubmission.run({
-    name,
-    company: company || null,
-    phone,
-    email,
-    calculation_json: JSON.stringify(calculation),
+async function logSubmission({ name, company, phone, email, calculation }) {
+  await db.execute({
+    sql: `INSERT INTO form_submissions (name, company, phone, email, calculation_json)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [name, company || null, phone, email, JSON.stringify(calculation)],
   });
 }
 
@@ -274,7 +285,7 @@ async function sendCalculationEmail({ name, company, phone, email, calculation }
   });
 }
 
-app.post('/api/send-calculation', (req, res) => {
+app.post('/api/send-calculation', async (req, res) => {
   try {
     const { name, company, phone, email, calculation } = req.body;
 
@@ -298,7 +309,7 @@ app.post('/api/send-calculation', (req, res) => {
       calculation,
     };
 
-    logSubmission(payload);
+    await logSubmission(payload);
     res.json({ ok: true });
 
     sendCalculationEmail(payload).catch((err) => {
@@ -310,26 +321,35 @@ app.post('/api/send-calculation', (req, res) => {
   }
 });
 
-app.get('/api/submissions', (_req, res) => {
-  const rows = db.prepare(`
-    SELECT id, created_at, name, company, phone, email, calculation_json
-    FROM form_submissions
-    ORDER BY id DESC
-    LIMIT 200
-  `).all();
-  res.json(rows);
+app.get('/api/submissions', async (_req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT id, created_at, name, company, phone, email, calculation_json
+      FROM form_submissions
+      ORDER BY id DESC
+      LIMIT 200
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Ошибка чтения заявок:', err.message);
+    res.status(500).json({ error: 'Не удалось прочитать заявки.' });
+  }
 });
 
 app.get('/', (_req, res) => {
   res.sendFile(path.join(ROOT, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`\n  Калькулятор:  http://localhost:${PORT}/`);
-  console.log(`  API:          http://localhost:${PORT}/api/send-calculation`);
-  console.log(`  База данных:  ${DB_PATH}\n`);
+export default app;
 
-  transporter.verify()
-    .then(() => console.log('  SMTP:         подключение OK\n'))
-    .catch((err) => console.warn(`  SMTP:         проверка не прошла — ${err.message}\n`));
-});
+if (!isVercel) {
+  app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
+    console.log(`\n  Калькулятор:  http://localhost:${PORT}/`);
+    console.log(`  API:          http://localhost:${PORT}/api/send-calculation`);
+    console.log(`  База данных:  ${process.env.TURSO_DATABASE_URL || localDbPath}\n`);
+
+    transporter.verify()
+      .then(() => console.log('  SMTP:         подключение OK\n'))
+      .catch((err) => console.warn(`  SMTP:         проверка не прошла — ${err.message}\n`));
+  });
+}

@@ -10,6 +10,7 @@ kassa-email-server/node_modules/
 
 # Build output
 *.log
+public/
 kassa-email-server/submissions.db
 kassa-email-server/submissions.db-*
 
