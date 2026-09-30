@@ -1,174 +1,145 @@
-# kassy
+# kassy-deploy
 
-Калькулятор экономики касс самообслуживания (Альфа-Банк): SVG-лендинг, 5 экранов калькулятора, отправка расчёта на email через Node-бэкенд и логирование заявок в SQLite.
+Калькулятор экономики касс самообслуживания (Альфа-Банк): SVG-лендинг, 5 шагов калькулятора, письмо с расчётом и лог заявок.
 
-Репозиторий: [github.com/Axer-me/kassy](https://github.com/Axer-me/kassy)
+Прод: **Vercel** (`*.vercel.app`) + **Turso** (постоянная SQLite в облаке) + SMTP.
 
----
-
-## Быстрый старт
-
-1. Клонируйте репозиторий и откройте папку проекта.
-2. В `kassa-email-server/` выполните `npm install`, скопируйте `.env.example` → `.env`.
-3. Заполните SMTP в `.env` (см. [Методика получения ключей](#методика-получения-ключей-smtp) ниже).
-4. Запустите `npm start` и откройте http://localhost:3456/
-
-**iPhone / iPad** (та же Wi‑Fi-сеть): запустите сервер на `0.0.0.0` (см. [Ручной запуск](#ручной-запуск)) и откройте в Safari `http://IP_КОМПЬЮТЕРА:3456/`.
+Репозиторий: [github.com/Axer-me/kassy-deploy](https://github.com/Axer-me/kassy-deploy)
 
 ---
 
-## Структура
+## Что внутри
 
-| Файл / папка | Назначение |
-|--------------|------------|
-| `index.html` | Лендинг (SVG) + 5 экранов калькулятора |
-| `assets/` | SVG-секции лендинга, `hero касса.svg` |
-| `kassa-email-server/` | Express + Nodemailer (SMTP) + SQLite |
-| `kassa-email-server/.env` | SMTP и порт (**локально, не в git**) |
-| `kassa-email-server/submissions.db` | Лог заявок (создаётся автоматически) |
+| Путь | Назначение |
+|------|------------|
+| `index.html` | Лендинг и калькулятор |
+| `assets/` | SVG и картинки |
+| `kassa-email-server/` | Express: SMTP, запись заявок |
+| `api/index.js` | Точка входа API на Vercel |
+| `vercel.json` | Сборка статики и маршруты `/api` |
+| `kassa-email-server/.env.example` | Шаблон секретов (**не** коммитить `.env`) |
+
+Форма: `POST /api/send-calculation`  
+Статистика заявок: `GET /api/submissions` (последние 200)
 
 ---
 
-## API
+## Локальный запуск
 
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `POST` | `/api/send-calculation` | Отправка HTML-письма клиенту + запись в БД |
-| `GET` | `/api/submissions` | Последние 200 заявок (JSON, для просмотра логов) |
+Нужны Node.js 22 и SMTP (пароль приложения Gmail/Yandex).
 
-Тело `POST /api/send-calculation`:
-
-```json
-{
-  "name": "Иван",
-  "company": "ООО Пример",
-  "phone": "+7 900 000-00-00",
-  "email": "client@example.com",
-  "calculation": { "...": "объект расчёта из калькулятора" }
-}
+```powershell
+cd kassa-email-server
+npm install
+copy .env.example .env
 ```
 
+Заполните в `.env` хотя бы SMTP. Без Turso заявки пишутся в локальный файл `submissions.db`.
+
+Из корня репозитория или из `kassa-email-server/`:
+
+```powershell
+npm start
+```
+
+Откройте http://localhost:3456/
+
+На телефоне в той же Wi‑Fi:
+
+```powershell
+$env:HOST="0.0.0.0"; npm start
+```
+
+Дальше `http://IP_КОМПЬЮТЕРА:3456/` (`ipconfig`).
+
 ---
 
-## База данных и логирование
+## Деплой: Vercel + Turso
 
-- **СУБД:** SQLite (файл `kassa-email-server/submissions.db`, библиотека `better-sqlite3`).
-- **Таблица:** `form_submissions` — имя, компания, телефон, email, JSON расчёта, время.
-- При каждой отправке формы сначала пишется строка в БД, затем уходит письмо через SMTP.
-- Просмотр: `http://localhost:3456/api/submissions`.
+Секреты только в панелях Turso/Vercel, не в git.
+
+### 1. Turso
+
+1. Регистрация: [turso.tech](https://turso.tech)
+2. Create Database, например `kassy-submissions` (регион в Европе, если есть).
+3. Скопируйте **URL** (`libsql://….turso.io`) и **Auth token**.
+
+Таблица `form_submissions` создаётся сама при первом запросе.
+
+CLI (если установлен):
+
+```bash
+turso db create kassy-submissions
+turso db show kassy-submissions --url
+turso db tokens create kassy-submissions
+```
+
+### 2. GitHub
+
+Этот репозиторий уже на GitHub. Дальше достаточно `git push`.
+
+### 3. Vercel
+
+1. [vercel.com/new](https://vercel.com/new) → Import `Axer-me/kassy-deploy`.
+2. Root Directory **не** ставить `kassa-email-server` — корень репозитория.
+3. Environment Variables **до** первого Deploy:
+
+| Переменная | Пример |
+|------------|--------|
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `465` |
+| `SMTP_SECURE` | `true` |
+| `SMTP_USER` | почта |
+| `SMTP_PASS` | пароль приложения |
+| `SMTP_FROM` | `Альфа-Банк <почта>` |
+| `TURSO_DATABASE_URL` | `libsql://….turso.io` |
+| `TURSO_AUTH_TOKEN` | токен Turso |
+
+4. Deploy → ссылка вида `https://kassy-deploy.vercel.app`.
+
+Если переменные добавили после деплоя — Redeploy.
+
+Без `TURSO_*` сборка/старт на Vercel упадёт: на serverless нет постоянного диска.
+
+### 4. Проверка
+
+1. Открыть `https://….vercel.app`.
+2. Пройти калькулятор, отправить форму на свой email (проверить «Спам»).
+3. `https://….vercel.app/api/submissions` — заявка в JSON.
+4. Подождать 15–20 минут и открыть `/api/submissions` снова — строка должна остаться (Turso).
+
+Из России `*.vercel.app` часто открывается без VPN. Свой `.ru`, повешенный на DNS Vercel, часто режется. Панели Vercel/Turso с ПК в РФ могут требовать обход — на работу ссылки для заказчика это не влияет.
+
+---
+
+## SMTP
+
+Нужен **пароль приложения**, не пароль от почты.
+
+**Yandex:** IMAP/SMTP в настройках почты + [пароль приложения](https://id.yandex.ru/security/app-passwords). Хост `smtp.yandex.ru`, порт 465.
+
+**Gmail:** 2FA + [пароль приложения](https://myaccount.google.com/apppasswords). Хост `smtp.gmail.com`, порт 465.
 
 ---
 
 ## Расчёт
 
-- **Покупка:** (КСО + допы) × кол-во + сервис **4 000 ₽/мес** × срок
-- **Подписка:** тариф × кол-во × месяцы
-- **В обороте:** сумма покупки − первый месячный платёж по подписке
+- **Покупка:** (КСО + допы) × количество + сервис 4 000 ₽/мес × срок
+- **Подписка:** тариф × количество × месяцы
+- **В обороте:** покупка − первый месячный платёж по подписке
 - **Экономия за период:** покупка − подписка
 
----
-
-## Методика получения ключей (SMTP)
-
-Текущая версия приложения отправляет письма **только через SMTP** — настройка в `kassa-email-server/.env`. Секреты **не хранятся в git**; создайте свои учётные данные (не запрашивайте у предыдущего разработчика).
-
-### Шаг 1. Подготовить `.env`
-
-```bash
-cd kassa-email-server
-npm install
-copy .env.example .env    # Windows
-# cp .env.example .env    # macOS / Linux
-```
-
-### Шаг 2. Выбрать почтовый провайдер
-
-| Провайдер | Лимит (free) | SMTP-хост | Порт |
-|-----------|--------------|-----------|------|
-| **Yandex** | ~300 писем/день | `smtp.yandex.ru` | 465 (SSL) |
-| **Gmail** | ~500 писем/день | `smtp.gmail.com` | 465 (SSL) |
-| **Mail.ru** | ~100–300/день | `smtp.mail.ru` | 465 (SSL) |
-
-> Для демо и пилота обычно хватает Yandex или Gmail. Для больших объёмов — SendPulse, Brevo, Amazon SES.
-
-### Шаг 3. Yandex (рекомендуется для `.env.example`)
-
-1. Зарегистрируйте или используйте ящик на [yandex.ru](https://yandex.ru).
-2. Включите доступ по протоколу IMAP/SMTP: [Настройки почты → Почтовые программы](https://mail.yandex.ru/?ncrnd=0#setup/client).
-3. Создайте **пароль приложения** (не основной пароль от аккаунта):  
-   [id.yandex.ru → Безопасность → Пароли приложений](https://id.yandex.ru/security/app-passwords)
-4. Заполните `.env`:
-
-```env
-SMTP_HOST=smtp.yandex.ru
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your@yandex.ru
-SMTP_PASS=xxxxxxxxxxxxxxxx
-SMTP_FROM=Альфа-Банк <your@yandex.ru>
-PORT=3456
-```
-
-### Шаг 4. Gmail (альтернатива)
-
-1. Включите двухфакторную аутентификацию в Google-аккаунте.
-2. Создайте **пароль приложения**: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) → «Почта» / «Другое устройство».
-3. Заполните `.env`:
-
-```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your@gmail.com
-SMTP_PASS=xxxx xxxx xxxx xxxx
-SMTP_FROM=Альфа-Банк <your@gmail.com>
-PORT=3456
-```
-
-**Важно:** пароль Gmail работает только с `smtp.gmail.com`, не с `smtp.yandex.ru`.
-
-### Шаг 5. Проверка
-
-1. Запустите `npm start` в `kassa-email-server/`.
-2. Пройдите калькулятор до последнего экрана.
-3. Заполните форму **своим email** и нажмите «Получить расчёт →».
-4. Проверьте входящие и папку «Спам».
-5. Убедитесь, что заявка попала в лог: http://localhost:3456/api/submissions
-
-### Типичные ошибки
-
-| Симптом | Решение |
-|---------|---------|
-| «Не задана переменная окружения SMTP_*» | Не создан или пустой `.env` |
-| `Invalid login` / `535` | Неверный пароль; для Yandex/Gmail нужен **пароль приложения**, не пароль от сайта |
-| Письма не доходят, в логе заявка есть | Проверьте «Спам»; не шлите много одинаковых писем подряд — срабатывает антиспам |
-| Форма не отправляется на iPhone | Открывайте через `http://IP:3456/`, не `file://`; сервер слушает `0.0.0.0` |
-| CORS / fetch failed | Сервер не запущен или открыт HTML как файл, а не через HTTP |
-
-### Безопасность
-
-- Файл `.env` в `.gitignore` — **не коммитьте** его и не публикуйте пароли.
-- В репозитории только плейсхолдеры в `.env.example`.
-- На продакшене используйте отдельный служебный ящик, не личную почту.
+Расчёт информационный, не оферта.
 
 ---
 
-## Ручной запуск
+## Частые ошибки
 
-```bash
-cd kassa-email-server
-npm install
-copy .env.example .env   # заполнить SMTP
-npm start
-```
-
-Приложение: http://localhost:3456/
-
-Для доступа с iPhone в локальной сети — слушать все интерфейсы:
-
-```bash
-# Windows PowerShell
-$env:HOST="0.0.0.0"; npm start
-```
-
-Узнайте IP компьютера (`ipconfig`) и откройте на телефоне `http://192.168.x.x:3456/`.
+| Симптом | Что проверить |
+|---------|----------------|
+| «Не задана переменная SMTP_*» / Turso | `.env` локально или Environment Variables на Vercel + Redeploy |
+| `535` / Invalid login | пароль приложения, хост совпадает с провайдером |
+| Форма ошибка, письма нет | логи Deployment на Vercel, `TURSO_*` |
+| Письма нет, заявка в `/api/submissions` есть | «Спам»; SMTP с IP Vercel |
+| Сайт 404 на Vercel | Root Directory должен быть пустой |
+| Локально форма не уходит | открывать `http://localhost:3456/`, не `file://` |

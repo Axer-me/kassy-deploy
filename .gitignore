@@ -15,6 +15,7 @@ kassa-email-server/submissions.db
 kassa-email-server/submissions.db-*
 
 # OS / IDE
+.cursor/
 .DS_Store
 Thumbs.db
 .idea/
