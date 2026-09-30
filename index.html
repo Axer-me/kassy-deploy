@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>Кассы самообслуживания — Альфа-Банк</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/favicon.svg">
-  <title>Кассы самообслуживания — Альфа-Банк</title>
     <script>
     function goTo(n) {
       var radio = document.getElementById('page-' + n);
@@ -19,6 +19,10 @@
     var calcResult = null;
     var BASE_MONTHLY = 6990;
     var SERVICE_MONTHLY = 4000;
+    var NAME_MAX_LEN = 100;
+    var COMPANY_MAX_LEN = 150;
+    var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+    var FIO_RE = /^[\p{L}\s.\-']{2,100}$/u;
     var PURCHASE_PRICES = {
       kassa: 150000,
       scanner: 4000,
@@ -161,6 +165,22 @@
       if (opts.scales) unitHardware += PURCHASE_PRICES.scales;
       if (opts.install) unitHardware += PURCHASE_PRICES.install;
 
+      var purchaseLines = [
+        { label: 'Касса КСО', unit: PURCHASE_PRICES.kassa, qty: registers, total: PURCHASE_PRICES.kassa * registers }
+      ];
+      if (opts.scanner) purchaseLines.push({ label: 'Выносной сканер', unit: PURCHASE_PRICES.scanner, qty: registers, total: PURCHASE_PRICES.scanner * registers });
+      if (opts.pedestal) purchaseLines.push({ label: 'Установочная тумба', unit: PURCHASE_PRICES.pedestal, qty: registers, total: PURCHASE_PRICES.pedestal * registers });
+      if (opts.scales) purchaseLines.push({ label: 'Весы', unit: PURCHASE_PRICES.scales, qty: registers, total: PURCHASE_PRICES.scales * registers });
+      if (opts.install) purchaseLines.push({ label: 'Монтаж оборудования', unit: PURCHASE_PRICES.install, qty: registers, total: PURCHASE_PRICES.install * registers });
+
+      var subscriptionMonthlyLines = [
+        { label: 'Базовая подписка', amount: BASE_MONTHLY }
+      ];
+      if (opts.scanner) subscriptionMonthlyLines.push({ label: 'Выносной сканер', amount: optionPrices.scanner });
+      if (opts.pedestal) subscriptionMonthlyLines.push({ label: 'Установочная тумба', amount: optionPrices.pedestal });
+      if (opts.scales) subscriptionMonthlyLines.push({ label: 'Весы', amount: optionPrices.scales });
+      if (opts.install) subscriptionMonthlyLines.push({ label: 'Монтаж оборудования', amount: optionPrices.install });
+
       var fullKit = unitHardware * registers;
       var serviceTotal = SERVICE_MONTHLY * months * registers;
       var unitPurchaseTotal = unitHardware + SERVICE_MONTHLY * months;
@@ -169,20 +189,6 @@
       var monthlyPayment = monthly * registers;
       var inCirculation = purchaseTotal - monthlyPayment;
       var savings = Math.max(0, purchaseTotal - subscriptionTotal);
-
-      var purchaseLines = [
-        { label: 'Касса самообслуживания', unit: PURCHASE_PRICES.kassa, qty: registers, total: PURCHASE_PRICES.kassa * registers }
-      ];
-      if (opts.scanner) purchaseLines.push({ label: 'Выносной сканер', unit: PURCHASE_PRICES.scanner, qty: registers, total: PURCHASE_PRICES.scanner * registers });
-      if (opts.pedestal) purchaseLines.push({ label: 'Установочная тумба', unit: PURCHASE_PRICES.pedestal, qty: registers, total: PURCHASE_PRICES.pedestal * registers });
-      if (opts.scales) purchaseLines.push({ label: 'Весы', unit: PURCHASE_PRICES.scales, qty: registers, total: PURCHASE_PRICES.scales * registers });
-      if (opts.install) purchaseLines.push({ label: 'Монтаж оборудования', unit: PURCHASE_PRICES.install, qty: registers, total: PURCHASE_PRICES.install * registers });
-
-      var subscriptionMonthlyLines = [{ label: 'Базовый тариф', amount: BASE_MONTHLY }];
-      if (opts.scanner) subscriptionMonthlyLines.push({ label: 'Выносной сканер', amount: optionPrices.scanner });
-      if (opts.pedestal) subscriptionMonthlyLines.push({ label: 'Установочная тумба', amount: optionPrices.pedestal });
-      if (opts.scales) subscriptionMonthlyLines.push({ label: 'Весы', amount: optionPrices.scales });
-      if (opts.install) subscriptionMonthlyLines.push({ label: 'Монтаж оборудования', amount: optionPrices.install });
 
       calcResult = {
         registers: registers,
@@ -195,14 +201,10 @@
         monthlyPaymentFormatted: formatMoney(monthlyPayment) + ' \u20bd/мес',
         options: opts,
         unitHardware: unitHardware,
-        unitHardwareFormatted: formatMoney(unitHardware) + ' \u20bd',
         unitPurchaseTotal: unitPurchaseTotal,
         unitPurchaseTotalFormatted: formatMoney(unitPurchaseTotal) + ' \u20bd',
         fullKit: fullKit,
-        fullKitFormatted: formatMoney(fullKit) + ' \u20bd',
-        serviceMonthly: SERVICE_MONTHLY,
         serviceTotal: serviceTotal,
-        serviceTotalFormatted: formatMoney(serviceTotal) + ' \u20bd',
         purchaseTotal: purchaseTotal,
         subscriptionTotal: subscriptionTotal,
         inCirculation: inCirculation,
@@ -211,6 +213,10 @@
         subscriptionTotalFormatted: formatMillions(subscriptionTotal),
         inCirculationFormatted: formatMillions(inCirculation),
         savingsFormatted: formatMillions(savings),
+        serviceMonthly: SERVICE_MONTHLY,
+        fullKitFormatted: formatMoney(fullKit) + ' ₽',
+        serviceTotalFormatted: formatMoney(serviceTotal) + ' ₽',
+        unitHardwareFormatted: formatMoney(unitHardware) + ' ₽',
         purchaseLines: purchaseLines,
         subscriptionMonthlyLines: subscriptionMonthlyLines
       };
@@ -368,22 +374,46 @@
 
     .back-btn,
     label.back-btn {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface-2);
+      border: 1px solid #383838;
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
       cursor: pointer;
-      padding: 8px 4px;
-      min-height: 44px;
-      min-width: 44px;
-      transition: color .15s;
+      padding: 0 14px;
+      height: 40px;
+      min-width: 40px;
+      white-space: nowrap;
+      transition: background .15s, border-color .15s;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
 
-    .back-btn:hover { color: var(--text); }
+    .back-btn:hover,
+    label.back-btn:hover { background: #2e2e2e; border-color: #484848; }
 
-    .header-spacer { width: 60px; }
+    .home-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      background: var(--surface-2);
+      border: 1px solid #383838;
+      border-radius: 10px;
+      color: var(--text-muted);
+      text-decoration: none;
+      flex-shrink: 0;
+      transition: color .15s, background .15s, border-color .15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .home-btn:hover { color: var(--text); background: #2e2e2e; border-color: #484848; }
 
     /* Buttons */
     .btn-primary,
@@ -436,127 +466,36 @@
 
 
 
-    /* ===== SCREEN 1 — SVG landing (Figma exports) ===== */
-    .screen.screen-1 {
-      padding: 0;
-      overflow-x: visible;
-      overflow-y: auto;
-      background: #000;
-      justify-content: flex-start;
+    /* ===== SCREEN 1 ===== */
+    .screen-1 {
+      justify-content: space-between;
       align-items: center;
+      text-align: center;
+      padding-top: 40px;
     }
 
-    .skb-viewport {
-      width: 100%;
-      max-width: none;
-      margin: 0 auto;
-      flex: none;
+    .hero-visual {
+      flex: 1;
       display: flex;
+      align-items: center;
       justify-content: center;
-      align-items: flex-start;
-      overflow: visible;
-      background: #000;
-    }
-
-    .skb-scale-wrap {
-      overflow: hidden;
-      border-top-left-radius: 38.4px;
-      border-top-right-radius: 38.4px;
-    }
-
-    .skb-page.skb-landing {
-      width: 1280px;
-      transform: scale(var(--skb-scale, 0.6));
-      transform-origin: top left;
-      background: #000000;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      flex-shrink: 0;
-      margin-bottom: 0;
-      padding-bottom: 0;
-    }
-
-    .skb-svg-block {
-      position: relative;
-      width: 1140px;
-      flex-shrink: 0;
-      line-height: 0;
-    }
-
-    .skb-svg-block--full {
-      width: 1280px;
-    }
-
-    .skb-svg-block[data-section="hero"] {
-      z-index: 2;
-      background: #000000;
-      margin-bottom: -64px;
-    }
-
-    .skb-svg-block--footer {
-      margin-top: -64px !important;
-      z-index: 2;
-    }
-
-    .skb-svg-block--footer::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 164px;
-      background: #ffffff;
-      z-index: 0;
-    }
-
-    .skb-svg-block--footer .skb-svg-img,
-    .skb-svg-block--footer .skb-svg-cta {
-      position: relative;
-      z-index: 1;
-    }
-
-    .skb-landing-content {
       width: 100%;
-      background: #ffffff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-top: 0;
-      padding: 128px 0 64px;
-      gap: 128px;
-      position: relative;
-      z-index: 1;
+      min-height: 0;
+      max-height: none;
     }
 
-    .skb-svg-img {
-      display: block;
+    .hero-visual img {
       width: 100%;
+      max-width: min(560px, 70vw);
       height: auto;
     }
 
-    .skb-svg-hero-kassa {
-      position: absolute;
-      pointer-events: none;
-      object-fit: contain;
-    }
-
-    .skb-svg-cta {
-      position: absolute;
-      display: block;
-      margin: 0;
-      padding: 0;
-      cursor: pointer;
-      background: transparent;
-      border: none;
-      text-indent: -9999px;
-      overflow: hidden;
-      z-index: 2;
-    }
-
-    .skb-svg-cta:focus-visible {
-      outline: 2px solid #F83A2A;
-      outline-offset: 2px;
+    .screen-1 h1 {
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text);
+      margin-bottom: 48px;
     }
 
 
@@ -613,18 +552,32 @@
       padding: 24px;
       text-align: center;
       margin-bottom: 24px;
+      border: 1px solid #2a2a2a;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .total-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--red);
     }
 
     .total-card .label {
       color: var(--text-muted);
-      font-size: 15px;
-      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 10px;
     }
 
-    .total-card .total {
-      font-size: 40px;
+    .total-card .monthly-total {
+      font-size: 38px;
       font-weight: 700;
-      color: var(--text);
+      color: var(--red);
+      line-height: 1.1;
     }
 
     /* ===== SCREEN 3 ===== */
@@ -771,9 +724,10 @@
     .comparison {
       display: flex;
       gap: 8px;
-      align-items: flex-start;
+      align-items: stretch;
       margin-bottom: 16px;
-      flex-shrink: 0;
+      flex: 1;
+      min-height: 0;
     }
 
     .vs-badge {
@@ -787,13 +741,13 @@
 
     .compare-card {
       flex: 1;
-      min-width: 0;
       border-radius: var(--radius-md);
-      padding: 14px 12px;
+      padding: 16px 14px;
       display: flex;
       flex-direction: column;
       font-size: 11px;
-      line-height: 1.35;
+      line-height: 1.4;
+      overflow: hidden;
     }
 
     .compare-card.purchase {
@@ -816,18 +770,15 @@
     }
 
     .card-total {
-      font-size: clamp(16px, 4.2vw, 22px);
+      font-size: 22px;
       font-weight: 700;
-      margin-bottom: 10px;
-      line-height: 1.15;
-      word-break: break-word;
+      margin-bottom: 12px;
     }
 
     .line-item {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 6px;
+      gap: 8px;
       margin-bottom: 4px;
       color: inherit;
       opacity: .85;
@@ -841,17 +792,7 @@
       border-top: 1px solid rgba(255,255,255,.15);
     }
 
-    .line-item .val {
-      white-space: nowrap;
-      flex-shrink: 0;
-      text-align: right;
-      font-size: 10px;
-    }
-
-    .line-item span:first-child {
-      flex: 1;
-      min-width: 0;
-    }
+    .line-item .val { white-space: nowrap; }
 
     .sub-note {
       font-size: 9px;
@@ -859,9 +800,8 @@
     }
 
     .warnings {
-      margin-top: 10px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255,255,255,.1);
+      margin-top: auto;
+      padding-top: 10px;
     }
 
     .warning-item {
@@ -875,22 +815,14 @@
 
     .benefits {
       margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255,255,255,.2);
     }
 
     .benefit-item {
       display: flex;
       align-items: flex-start;
-      gap: 5px;
-      margin-bottom: 5px;
-      font-size: 9px;
-      line-height: 1.35;
-    }
-
-    .benefit-item span:last-child {
-      flex: 1;
-      min-width: 0;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 10px;
     }
 
     .benefit-item .check {
@@ -906,7 +838,6 @@
       align-items: center;
       gap: 14px;
       margin-top: auto;
-      flex-shrink: 0;
     }
 
     .insight-icon {
@@ -931,7 +862,6 @@
       display: flex;
       gap: 10px;
       margin-top: 12px;
-      flex-shrink: 0;
     }
 
     .screen-4-actions .btn-primary,
@@ -1003,11 +933,7 @@
     .form-group input:focus { border-color: var(--red); }
     .form-group input::placeholder { color: #555; }
     .form-group input.input-invalid { border-color: #ff5252; }
-    .form-group .field-hint {
-      font-size: 11px;
-      color: #666;
-      margin-top: 6px;
-    }
+    .field-hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
 
     .success-toast {
       background: var(--surface);
@@ -1076,11 +1002,29 @@
         padding-right: max(20px, env(safe-area-inset-right));
       }
 
+      .screen-1 h1 {
+        font-size: 26px;
+      }
+
+      .hero-visual img {
+        max-width: min(360px, 86vw);
+      }
+
       .screen-4 {
         padding-top: 20px;
         padding-bottom: max(24px, env(safe-area-inset-bottom));
         padding-left: max(16px, env(safe-area-inset-left));
         padding-right: max(16px, env(safe-area-inset-right));
+      }
+
+      .stepper-value {
+        font-size: 30px;
+        height: 56px;
+      }
+
+      .stepper-btn {
+        width: 56px;
+        height: 56px;
       }
     }
 
@@ -1092,45 +1036,6 @@
 
       .vs-badge {
         align-self: center;
-        padding: 2px 0;
-        font-size: 12px;
-      }
-
-      .compare-card {
-        width: 100%;
-        font-size: 12px;
-        padding: 16px 14px;
-      }
-
-      .card-header {
-        font-size: 15px;
-      }
-
-      .card-total {
-        font-size: 20px;
-      }
-
-      .line-item .val {
-        font-size: 11px;
-      }
-
-      .benefit-item {
-        font-size: 10px;
-      }
-
-      .insight-banner {
-        flex-direction: column;
-        text-align: center;
-        gap: 10px;
-        padding: 14px 16px;
-      }
-
-      .insight-icon {
-        font-size: 28px;
-      }
-
-      .insight-text strong {
-        font-size: 16px;
       }
 
       .screen-4-actions {
@@ -1145,64 +1050,21 @@
         text-align: center;
       }
 
-      .screen-3 h2 {
-        font-size: 22px;
-        margin-bottom: 32px;
-      }
-
-      .stepper-value {
-        font-size: 30px;
-        height: 56px;
-      }
-
-      .stepper-btn {
-        width: 56px;
-        height: 56px;
-      }
-
-      .total-card .total {
-        font-size: 32px;
-      }
-
-      .period-tab {
-        font-size: 14px;
-        padding: 14px 6px;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .screen {
-        padding-top: max(20px, env(safe-area-inset-top));
-        padding-bottom: max(24px, env(safe-area-inset-bottom));
-      }
-
-      .screen-2,
-      .screen-3,
-      .screen-5 {
-        padding-left: max(16px, env(safe-area-inset-left));
-        padding-right: max(16px, env(safe-area-inset-right));
-      }
-
-      .screen-2 h2,
-      .screen-4 .page-title h2 {
-        font-size: 20px;
-      }
-
-      .option-label {
-        font-size: 15px;
-      }
-
-      .header-row .brand {
-        font-size: 14px;
-      }
-
-      .form-group input {
-        padding: 14px 16px;
-        font-size: 16px;
+      .insight-banner {
+        flex-direction: column;
+        text-align: center;
       }
     }
 
     @media (min-width: 1024px) {
+      .screen-1 h1 {
+        font-size: 40px;
+      }
+
+      .hero-visual img {
+        max-width: min(720px, 50vw);
+      }
+
       .screen-3 h2 {
         font-size: 32px;
       }
@@ -1217,20 +1079,9 @@
         height: 80px;
         font-size: 48px;
       }
-
-      .period-tab {
-        font-size: 18px;
-        padding: 18px 12px;
-        min-height: 60px;
-      }
     }
 
     @media (min-width: 768px) and (orientation: landscape) {
-      .screen-2 h2,
-      .screen-4 .page-title h2 {
-        font-size: 24px;
-      }
-
       .screen-3 h2 {
         margin-bottom: 28px;
       }
@@ -1273,51 +1124,27 @@
   <input type="radio" name="page" id="page-1" class="page-nav" checked>
   <!-- Экран 1: Стартовый -->
   <div class="screen screen-1" id="screen-1">
-    <div class="skb-viewport">
-      <div class="skb-scale-wrap">
-      <div class="skb-page skb-landing">
-        <section class="skb-svg-block skb-svg-block--full" data-section="hero">
-          <img class="skb-svg-img" src="assets/first svg.svg" width="1280" height="872" alt="">
-          <img class="skb-svg-hero-kassa" src="assets/hero касса.svg" alt="" style="left:47.734375%;top:11.353211%;width:46.796875%;height:68.692661%">
-          <label for="page-2" class="skb-svg-cta" style="left:5.468750%;top:47.477064%;width:14.765625%;height:6.422018%" aria-label="Оставить заявку">Оставить заявку</label>
-        </section>
-        <div class="skb-landing-content">
-        <section class="skb-svg-block" data-section="how">
-          <img class="skb-svg-img" src="assets/second svg.svg?v=20260825180019" width="1140" height="774" alt="">
-          <label for="page-2" class="skb-svg-cta" style="left:0.000000%;top:93.798450%;width:15.877193%;height:6.201550%" aria-label="Оставить заявку">Оставить заявку</label>
-        </section>
-        <section class="skb-svg-block" data-section="addons">
-          <img class="skb-svg-img" src="assets/third svg.svg" width="1140" height="686" alt="">
-          <label for="page-2" class="skb-svg-cta" style="left:0.000000%;top:93.002915%;width:15.877193%;height:6.997085%" aria-label="Оставить заявку">Оставить заявку</label>
-        </section>
-        <section class="skb-svg-block skb-svg-block--full" data-section="install">
-          <img class="skb-svg-img" src="assets/fourth svg.svg" width="1280" height="384" alt="">
-          <label for="page-2" class="skb-svg-cta" style="left:5.468750%;top:68.750000%;width:14.140625%;height:12.500000%" aria-label="Оставить заявку">Оставить заявку</label>
-        </section>
-        <section class="skb-svg-block skb-svg-block--full" data-section="industries">
-          <img class="skb-svg-img" src="assets/fifth svg.svg" width="1280" height="952" alt="">
-          <label for="page-2" class="skb-svg-cta" style="left:5.468750%;top:81.512605%;width:14.140625%;height:5.042017%" aria-label="Оставить заявку">Оставить заявку</label>
-        </section>
-        <section class="skb-svg-block skb-svg-block--full" data-section="form">
-          <img class="skb-svg-img" src="assets/sixth svg.svg" width="1280" height="831" alt="">
-          <label for="page-2" class="skb-svg-cta" style="left:51.250000%;top:70.156438%;width:19.218750%;height:5.776173%" aria-label="Перезвонить мне">Перезвонить мне</label>
-        </section>
-        <section class="skb-svg-block skb-svg-block--faq" data-section="faq">
-          <img class="skb-svg-img" src="assets/seventh svg.svg" width="1140" height="90" alt="">
-        </section>
-        </div>
-        <section class="skb-svg-block skb-svg-block--full skb-svg-block--footer" data-section="footer">
-          <img class="skb-svg-img" src="assets/eigth svg.svg" width="1280" height="2172" alt="">
-        </section>
-      </div>
-      </div>
+    <div class="brand">Альфа-Банк</div>
+
+    <div class="hero-visual">
+      <img src="assets/first_page_asset.svg" alt="Касса самообслуживания">
     </div>
+
+    <h1>Кассы самообслуживания<br>Подписаться или купить?</h1>
+
+    <label for="page-2" class="btn-primary">Рассчитать экономику →</label>
   </div>
 
   <input type="radio" name="page" id="page-2" class="page-nav">
   <!-- Экран 2: Комплектация -->
   <div class="screen screen-2" id="screen-2">
-    <div class="brand">Альфа-Банк</div>
+    <div class="header-row">
+      <label for="page-1" class="back-btn">← Назад</label>
+      <div class="brand" style="margin:0">Альфа-Банк</div>
+      <a href="/" class="home-btn" title="На главную">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </a>
+    </div>
 
     <h2>Настройте необходимую комплектацию</h2>
 
@@ -1362,7 +1189,9 @@
     <div class="header-row">
       <label for="page-2" class="back-btn">← Назад</label>
       <div class="brand" style="margin:0">Альфа-Банк</div>
-      <div class="header-spacer"></div>
+      <a href="/" class="home-btn" title="На главную">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </a>
     </div>
 
     <h2>Расчет экономики<br>для вашей сети</h2>
@@ -1407,7 +1236,9 @@
     <div class="header-row">
       <label for="page-3" class="back-btn">← Назад</label>
       <div class="brand" style="margin:0">Альфа-Банк</div>
-      <div class="header-spacer"></div>
+      <a href="/" class="home-btn" title="На главную">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </a>
     </div>
 
     <div class="page-title">
@@ -1479,11 +1310,13 @@
     <div class="header-row">
       <label for="page-4" class="back-btn">← Назад</label>
       <div class="brand" style="margin:0">Альфа-Банк</div>
-      <div class="header-spacer"></div>
+      <a href="/" class="home-btn" title="На главную">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </a>
     </div>
 
     <h2>Забрать расчёт с собой</h2>
-    <p class="form-subtitle">Оставьте контакты — вышлем на почту детальный расчёт с разбивкой по статьям</p>
+    <p class="form-subtitle">Оставьте контакты — вышлем детальный PDF на почту</p>
 
     <div class="file-warning" id="file-warning">
       Для отправки email нужен запущенный сервер. Используйте «Запуск мокапа касс.bat» или «Запуск для iPhone.bat».
@@ -1493,12 +1326,10 @@
       <div class="form-group">
         <label for="name">ФИО</label>
         <input type="text" id="name" placeholder="Иванов Иван Иванович" autocomplete="name" inputmode="text">
-        <div class="field-hint">До 100 символов</div>
       </div>
       <div class="form-group">
         <label for="company">Компания</label>
         <input type="text" id="company" placeholder="Альфа-Банк" autocomplete="organization">
-        <div class="field-hint">До 150 символов</div>
       </div>
       <div class="form-group">
         <label for="phone">Телефон</label>
@@ -1508,7 +1339,6 @@
         <label for="email">Email</label>
         <input type="email" id="email" placeholder="name@company.ru" autocomplete="email" inputmode="email">
       </div>
-
     </form>
 
     <label class="btn-primary" id="submit-btn" onclick="submitForm(); return false;">
@@ -1519,7 +1349,7 @@
 
     <div class="success-toast" id="success-toast">
       <div class="success-title">✓ Отправлено!</div>
-      <p>Детальный расчёт отправлен на вашу почту.</p>
+      <p>Расчёт отправлен на вашу почту.</p>
     </div>
   </div>
 
@@ -1537,128 +1367,9 @@
     if (btn) btn.classList.toggle('is-disabled', disabled);
   }
 
-  function initRegistersField() {
-    var el = document.getElementById('registers-count');
-    if (!el) return;
-
-    el.addEventListener('input', onRegistersInput);
-    el.addEventListener('change', onRegistersCommit);
-    el.addEventListener('blur', onRegistersCommit);
-    el.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        onRegistersCommit();
-        el.blur();
-      }
-    });
-  }
-
-  function initPage() {
-    ['opt-scanner-cb', 'opt-pedestal-cb', 'opt-scales-cb', 'opt-install-cb'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.addEventListener('change', updateMonthlyTotal);
-    });
-    updateMonthlyTotal();
-    initRegistersField();
-    initSkbLandingScale();
-    initContactForm();
-
-    var page4 = document.getElementById('page-4');
-    if (page4) {
-      page4.addEventListener('change', function() {
-        if (page4.checked) runCalculation();
-      });
-    }
-  }
-
-  var SKB_LANDING_DESIGN_WIDTH = 1280;
-  var SKB_LANDING_MAX_SCALE = 2;
-  var SKB_LANDING_SCALE = 1;
-
-  function fitSkbLandingScale() {
-    var page = document.querySelector('.skb-page.skb-landing');
-    var wrap = document.querySelector('.skb-scale-wrap');
-    var viewport = document.querySelector('.skb-viewport');
-    if (!page || !wrap) return;
-
-    var available = viewport ? viewport.clientWidth : window.innerWidth;
-    if (!available) available = window.innerWidth;
-
-    var scale = Math.min(SKB_LANDING_MAX_SCALE, available / SKB_LANDING_DESIGN_WIDTH);
-    scale = Math.max(0.26, scale);
-    SKB_LANDING_SCALE = scale;
-
-    page.style.setProperty('--skb-scale', String(scale));
-
-    var scaledWidth = Math.ceil(SKB_LANDING_DESIGN_WIDTH * scale);
-    wrap.style.width = scaledWidth + 'px';
-    wrap.style.height = Math.ceil(page.offsetHeight * scale) + 'px';
-
-    var radius = 64 * scale;
-    wrap.style.borderTopLeftRadius = radius + 'px';
-    wrap.style.borderTopRightRadius = radius + 'px';
-  }
-
-  function initSkbLandingScale() {
-    var page = document.querySelector('.skb-page.skb-landing');
-    var viewport = document.querySelector('.skb-viewport');
-    if (!page) return;
-
-    fitSkbLandingScale();
-    page.querySelectorAll('img').forEach(function(img) {
-      if (!img.complete) img.addEventListener('load', fitSkbLandingScale);
-    });
-
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(fitSkbLandingScale).observe(page);
-      if (viewport) new ResizeObserver(fitSkbLandingScale).observe(viewport);
-    }
-
-    window.addEventListener('resize', fitSkbLandingScale);
-    window.addEventListener('load', fitSkbLandingScale);
-    window.addEventListener('orientationchange', fitSkbLandingScale);
-  }
-
-  var NAME_MAX_LEN = 100;
-  var COMPANY_MAX_LEN = 150;
-  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-  var FIO_RE = /^[\p{L}\s.\-']{2,100}$/u;
-
   function setFieldInvalid(id, invalid) {
     var el = document.getElementById(id);
     if (el) el.classList.toggle('input-invalid', !!invalid);
-  }
-
-  function limitFieldLength(input, maxLen) {
-    var lastValid = input.value;
-
-    input.addEventListener('beforeinput', function(e) {
-      if (e.inputType === 'insertFromPaste' || e.inputType === 'insertReplacementText') {
-        var start = input.selectionStart != null ? input.selectionStart : input.value.length;
-        var end = input.selectionEnd != null ? input.selectionEnd : input.value.length;
-        var inserted = e.data || '';
-        var next = input.value.slice(0, start) + inserted + input.value.slice(end);
-        if (next.length > maxLen) {
-          e.preventDefault();
-          setFieldInvalid(input.id, true);
-          var toast = document.getElementById('error-toast');
-          if (toast) {
-            toast.textContent = 'Максимум ' + maxLen + ' символов — текст не обрезан, сократите вручную.';
-            toast.classList.add('visible');
-          }
-        }
-      }
-    });
-
-    input.addEventListener('input', function() {
-      if (input.value.length > maxLen) {
-        input.value = lastValid;
-        setFieldInvalid(input.id, true);
-        return;
-      }
-      lastValid = input.value;
-      if (input.value.length < maxLen) setFieldInvalid(input.id, false);
-    });
   }
 
   function phoneDigitsOnly(value) {
@@ -1684,28 +1395,23 @@
   function initPhoneField(input) {
     function applyPhoneMask() {
       var digits = phoneDigitsOnly(input.value);
-      var formatted = formatRuPhone(digits);
-      input.value = formatted;
+      input.value = formatRuPhone(digits);
       setFieldInvalid('phone', digits.length > 0 && digits.length < 11);
     }
-
     input.addEventListener('focus', function() {
       if (!input.value.trim()) input.value = '+7 (';
     });
-
     input.addEventListener('blur', function() {
       var digits = phoneDigitsOnly(input.value);
       if (digits.length <= 1) input.value = '';
       setFieldInvalid('phone', digits.length > 0 && digits.length < 11);
     });
-
     input.addEventListener('keydown', function(e) {
       if (e.key === 'Backspace' && (input.value === '+7 (' || input.value === '+7')) {
         e.preventDefault();
         input.value = '';
       }
     });
-
     input.addEventListener('input', applyPhoneMask);
     input.addEventListener('paste', function(e) {
       e.preventDefault();
@@ -1740,21 +1446,18 @@
       setFieldInvalid('name', true);
       return { ok: false, message: 'ФИО: только буквы, пробелы, дефис и точка (от 2 символов).' };
     }
-
-    if (company.length > COMPANY_MAX_LEN) {
-      setFieldInvalid('company', true);
-      return { ok: false, message: 'Название компании — не более ' + COMPANY_MAX_LEN + ' символов.' };
-    }
     if (!company) {
       setFieldInvalid('company', true);
       return { ok: false, message: 'Укажите название компании.' };
     }
-
+    if (company.length > COMPANY_MAX_LEN) {
+      setFieldInvalid('company', true);
+      return { ok: false, message: 'Название компании — не более ' + COMPANY_MAX_LEN + ' символов.' };
+    }
     if (phoneDigits.length !== 11) {
       setFieldInvalid('phone', true);
       return { ok: false, message: 'Введите номер телефона полностью: +7 и 10 цифр.' };
     }
-
     if (!email) {
       setFieldInvalid('email', true);
       return { ok: false, message: 'Укажите email.' };
@@ -1763,28 +1466,39 @@
       setFieldInvalid('email', true);
       return { ok: false, message: 'Некорректный email. Пример: name@company.ru' };
     }
-
     return { ok: true, name: name, company: company, phone: phone, email: email };
   }
 
-  function initContactForm() {
-    var nameEl = document.getElementById('name');
-    var companyEl = document.getElementById('company');
-    var phoneEl = document.getElementById('phone');
-    var emailEl = document.getElementById('email');
+  function initRegistersField() {
+    var el = document.getElementById('registers-count');
+    if (!el) return;
+    el.addEventListener('input', onRegistersInput);
+    el.addEventListener('change', onRegistersCommit);
+    el.addEventListener('blur', onRegistersCommit);
+    el.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onRegistersCommit();
+        el.blur();
+      }
+    });
+  }
 
-    if (nameEl) limitFieldLength(nameEl, NAME_MAX_LEN);
-    if (companyEl) limitFieldLength(companyEl, COMPANY_MAX_LEN);
-    if (phoneEl) initPhoneField(phoneEl);
+  function initPage() {
+    ['opt-scanner-cb', 'opt-pedestal-cb', 'opt-scales-cb', 'opt-install-cb'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', updateMonthlyTotal);
+    });
+    updateMonthlyTotal();
+    initRegistersField();
 
-    if (emailEl) {
-      emailEl.addEventListener('input', function() {
-        var val = emailEl.value.trim();
-        setFieldInvalid('email', val.length > 0 && !EMAIL_RE.test(val));
-      });
-      emailEl.addEventListener('blur', function() {
-        var val = emailEl.value.trim();
-        setFieldInvalid('email', val.length > 0 && !EMAIL_RE.test(val));
+    var phoneInput = document.getElementById('phone');
+    if (phoneInput) initPhoneField(phoneInput);
+
+    var page4 = document.getElementById('page-4');
+    if (page4) {
+      page4.addEventListener('change', function() {
+        if (page4.checked) runCalculation();
       });
     }
   }
@@ -1807,11 +1521,6 @@
       return;
     }
 
-    var name = validated.name;
-    var company = validated.company;
-    var phone = validated.phone;
-    var email = validated.email;
-
     if (!calcResult) {
       errorToast.textContent = 'Сначала пройдите все шаги калькулятора и выполните расчёт.';
       errorToast.classList.add('visible');
@@ -1827,10 +1536,10 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name,
-          company: company,
-          phone: phone,
-          email: email,
+          name: validated.name,
+          company: validated.company,
+          phone: validated.phone,
+          email: validated.email,
           calculation: calcResult
         })
       });
@@ -1845,7 +1554,7 @@
       setSubmitText('Отправлено ✓');
     } catch (err) {
       console.error(err);
-      errorToast.textContent = err.message || 'Не удалось отправить. Проверьте, что сервер запущен.';
+      errorToast.textContent = err.message || 'Не удалось отправить. Проверьте соединение.';
       errorToast.classList.add('visible');
       setSubmitDisabled(false);
       setSubmitText('Получить расчёт →');

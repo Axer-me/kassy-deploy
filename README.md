@@ -1,145 +1,201 @@
-# kassy-deploy
+# kassy
 
-Калькулятор экономики касс самообслуживания (Альфа-Банк): SVG-лендинг, 5 шагов калькулятора, письмо с расчётом и лог заявок.
-
-Прод: **Vercel** (`*.vercel.app`) + **Turso** (постоянная SQLite в облаке) + SMTP.
-
-Репозиторий: [github.com/Axer-me/kassy-deploy](https://github.com/Axer-me/kassy-deploy)
+Калькулятор экономики касс самообслуживания (Альфа-Банк): стартовый экран, 5 экранов калькулятора, отправка расчёта на email и сохранение заявок в Supabase.
 
 ---
 
-## Что внутри
+## Архитектура
 
-| Путь | Назначение |
-|------|------------|
-| `index.html` | Лендинг и калькулятор |
-| `assets/` | SVG и картинки |
-| `kassa-email-server/` | Express: SMTP, запись заявок |
-| `api/index.js` | Точка входа API на Vercel |
-| `vercel.json` | Сборка статики и маршруты `/api` |
-| `kassa-email-server/.env.example` | Шаблон секретов (**не** коммитить `.env`) |
-
-Форма: `POST /api/send-calculation`  
-Статистика заявок: `GET /api/submissions` (последние 200)
-
----
-
-## Локальный запуск
-
-Нужны Node.js 22 и SMTP (пароль приложения Gmail/Yandex).
-
-```powershell
-cd kassa-email-server
-npm install
-copy .env.example .env
+```
+Браузер  →  Vercel CDN (index.html + assets/)
+         →  Vercel Serverless (api/send-calculation.js)
+                ├── Nodemailer → SMTP → email клиенту
+                └── Supabase  → form_submissions
 ```
 
-Заполните в `.env` хотя бы SMTP. Без Turso заявки пишутся в локальный файл `submissions.db`.
+- **Фронтенд** — один `index.html`: стартовый экран + калькулятор (5 экранов, CSS-only навигация). На экране количества касс можно ввести число с клавиатуры (на телефоне — цифровая). Интерфейс растягивается на весь экран (киоск 1920×1080, iPad, смартфон).
+- **Бэкенд** — serverless-функция `api/send-calculation.js` (Vercel, Node.js).
+- **БД** — Supabase (PostgreSQL), таблица `form_submissions`.
+- **Локальная разработка** — `server.js` (Express), запуск из корня проекта.
 
-Из корня репозитория или из `kassa-email-server/`:
+---
 
-```powershell
+## Быстрый старт (локально)
+
+```bash
+npm install
+cp .env.example .env   # заполнить SMTP и Supabase
 npm start
 ```
 
 Откройте http://localhost:3456/
 
-На телефоне в той же Wi‑Fi:
-
-```powershell
+**iPhone / iPad** (та же Wi-Fi сеть):
+```bash
+# Windows PowerShell
 $env:HOST="0.0.0.0"; npm start
 ```
-
-Дальше `http://IP_КОМПЬЮТЕРА:3456/` (`ipconfig`).
+Узнайте IP (`ipconfig`) и откройте в Safari `http://192.168.x.x:3456/`.
 
 ---
 
-## Деплой: Vercel + Turso
+## Структура
 
-Секреты только в панелях Turso/Vercel, не в git.
+| Файл / папка | Назначение |
+|---|---|
+| `index.html` | Стартовый экран + 5 экранов калькулятора + вся логика на клиенте |
+| `assets/` | Изображение кассы на стартовом экране |
+| `favicon.svg` | Логотип Альфа-Банк, иконка вкладки |
+| `api/send-calculation.js` | Vercel serverless: отправка email + запись в Supabase |
+| `server.js` | Express-сервер для локальной разработки |
+| `.env.example` | Шаблон переменных окружения |
+| `vercel.json` | Конфиг деплоя (Node.js runtime) |
+| `supabase-schema.sql` | SQL для создания таблицы в Supabase |
 
-### 1. Turso
+---
 
-1. Регистрация: [turso.tech](https://turso.tech)
-2. Create Database, например `kassy-submissions` (регион в Европе, если есть).
-3. Скопируйте **URL** (`libsql://….turso.io`) и **Auth token**.
+## Переменные окружения
 
-Таблица `form_submissions` создаётся сама при первом запросе.
+Скопируйте `.env.example` → `.env` и заполните:
 
-CLI (если установлен):
+```env
+# SMTP (обязательно)
+SMTP_HOST=smtp.yandex.ru
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your@yandex.ru
+SMTP_PASS=your_app_password
+SMTP_FROM=Альфа-Банк <your@yandex.ru>
 
-```bash
-turso db create kassy-submissions
-turso db show kassy-submissions --url
-turso db tokens create kassy-submissions
+# Supabase (обязательно для сохранения заявок)
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJhbGc...   # service_role key, не anon!
+
+# Локальный сервер
+PORT=3456
 ```
 
-### 2. GitHub
-
-Этот репозиторий уже на GitHub. Дальше достаточно `git push`.
-
-### 3. Vercel
-
-1. [vercel.com/new](https://vercel.com/new) → Import `Axer-me/kassy-deploy`.
-2. Root Directory **не** ставить `kassa-email-server` — корень репозитория.
-3. Environment Variables **до** первого Deploy:
-
-| Переменная | Пример |
-|------------|--------|
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `465` |
-| `SMTP_SECURE` | `true` |
-| `SMTP_USER` | почта |
-| `SMTP_PASS` | пароль приложения |
-| `SMTP_FROM` | `Альфа-Банк <почта>` |
-| `TURSO_DATABASE_URL` | `libsql://….turso.io` |
-| `TURSO_AUTH_TOKEN` | токен Turso |
-
-4. Deploy → ссылка вида `https://kassy-deploy.vercel.app`.
-
-Если переменные добавили после деплоя — Redeploy.
-
-Без `TURSO_*` сборка/старт на Vercel упадёт: на serverless нет постоянного диска.
-
-### 4. Проверка
-
-1. Открыть `https://….vercel.app`.
-2. Пройти калькулятор, отправить форму на свой email (проверить «Спам»).
-3. `https://….vercel.app/api/submissions` — заявка в JSON.
-4. Подождать 15–20 минут и открыть `/api/submissions` снова — строка должна остаться (Turso).
-
-Из России `*.vercel.app` часто открывается без VPN. Свой `.ru`, повешенный на DNS Vercel, часто режется. Панели Vercel/Turso с ПК в РФ могут требовать обход — на работу ссылки для заказчика это не влияет.
+На **Vercel**: Settings → Environment Variables → добавить те же ключи.
 
 ---
 
-## SMTP
+## Настройка Supabase
 
-Нужен **пароль приложения**, не пароль от почты.
+1. Создайте проект на [supabase.com](https://supabase.com).
+2. Выполните [`supabase-schema.sql`](supabase-schema.sql) в **SQL Editor**:
 
-**Yandex:** IMAP/SMTP в настройках почты + [пароль приложения](https://id.yandex.ru/security/app-passwords). Хост `smtp.yandex.ru`, порт 465.
+```sql
+CREATE TABLE IF NOT EXISTS form_submissions (
+  id              BIGSERIAL PRIMARY KEY,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  name            TEXT NOT NULL,
+  company         TEXT,
+  phone           TEXT NOT NULL,
+  email           TEXT NOT NULL,
+  calculation_json JSONB
+);
+ALTER TABLE form_submissions ENABLE ROW LEVEL SECURITY;
+```
 
-**Gmail:** 2FA + [пароль приложения](https://myaccount.google.com/apppasswords). Хост `smtp.gmail.com`, порт 465.
+3. Получите ключи: **Settings → API**:
+   - `Project URL` → `SUPABASE_URL`
+   - `service_role` (secret) → `SUPABASE_SERVICE_KEY`
+
+Просматривать заявки: **Table Editor → form_submissions**.
 
 ---
 
-## Расчёт
+## Настройка SMTP
 
-- **Покупка:** (КСО + допы) × количество + сервис 4 000 ₽/мес × срок
-- **Подписка:** тариф × количество × месяцы
-- **В обороте:** покупка − первый месячный платёж по подписке
-- **Экономия за период:** покупка − подписка
+| Провайдер | SMTP-хост | Порт | Лимит |
+|---|---|---|---|
+| **Yandex** (рекомендуется) | `smtp.yandex.ru` | 465 | ~300/день |
+| Gmail | `smtp.gmail.com` | 465 | ~500/день |
+| Mail.ru | `smtp.mail.ru` | 465 | ~100–300/день |
 
-Расчёт информационный, не оферта.
+> Для больших объёмов: SendPulse, Brevo, Amazon SES.
+
+**Yandex:**
+1. Включите SMTP: [Настройки → Почтовые программы](https://mail.yandex.ru/?#setup/client).
+2. Создайте пароль приложения: [id.yandex.ru → Безопасность → Пароли приложений](https://id.yandex.ru/security/app-passwords).
+3. Используйте этот пароль в `SMTP_PASS` — не пароль от сайта.
+
+**Gmail:**
+1. Включите двухфакторную аутентификацию.
+2. Создайте пароль приложения: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
 
 ---
 
-## Частые ошибки
+## Деплой на Vercel
 
-| Симптом | Что проверить |
-|---------|----------------|
-| «Не задана переменная SMTP_*» / Turso | `.env` локально или Environment Variables на Vercel + Redeploy |
-| `535` / Invalid login | пароль приложения, хост совпадает с провайдером |
-| Форма ошибка, письма нет | логи Deployment на Vercel, `TURSO_*` |
-| Письма нет, заявка в `/api/submissions` есть | «Спам»; SMTP с IP Vercel |
-| Сайт 404 на Vercel | Root Directory должен быть пустой |
-| Локально форма не уходит | открывать `http://localhost:3456/`, не `file://` |
+1. Подключите репозиторий на [vercel.com](https://vercel.com) → **Import Project**.
+2. **Root Directory** — корень репозитория (`kassy-deploy (root)`), не вложенная папка.
+3. Добавьте переменные окружения (Settings → Environment Variables).
+4. Deploy — статика и `api/` задеплоятся автоматически.
+
+**Диагностика** (если заявки не пишутся в БД): Vercel → **Logs**, фильтр `[supabase]`:
+- `[supabase] submission logged: email` — всё работает
+- `[supabase] insert error: ...` — ошибка вставки
+- `[supabase] not configured` — не заданы env vars
+
+---
+
+## API
+
+| Метод | URL | Описание |
+|---|---|---|
+| `POST` | `/api/send-calculation` | Валидация → email → запись в Supabase |
+
+Тело запроса:
+
+```json
+{
+  "name": "Иванов Иван Иванович",
+  "company": "ООО Пример",
+  "phone": "+7 (900) 000-00-00",
+  "email": "client@example.com",
+  "calculation": {
+    "registers": 50,
+    "years": 3,
+    "yearsLabel": "3 года",
+    "purchaseTotalFormatted": "...",
+    "purchaseLines": [...],
+    "subscriptionMonthlyLines": [...],
+    "..."  : "остальные поля из runCalculation()"
+  }
+}
+```
+
+---
+
+## Формула расчёта
+
+| Метрика | Формула |
+|---|---|
+| Покупка за период | (стоимость КСО + допы) × кол-во + сервис 4 000 ₽/мес × срок |
+| Подписка за период | тариф/мес × кол-во × месяцы |
+| Остаётся в обороте | сумма покупки − первый платёж по подписке |
+| Экономия за период | покупка − подписка |
+
+---
+
+## Валидация формы
+
+| Поле | Правила |
+|---|---|
+| ФИО | Только буквы (включая кириллицу), пробел, дефис, точка; 2–100 символов |
+| Компания | Обязательное, до 150 символов |
+| Телефон | Маска `+7 (XXX) XXX-XX-XX`; ровно 11 цифр |
+| Email | Regex; TLD ≥ 2 символа |
+
+---
+
+## Типичные ошибки
+
+| Симптом | Решение |
+|---|---|
+| «Не задана переменная SMTP_*» | Не создан или пустой `.env` / не добавлены env vars в Vercel |
+| `Invalid login` / `535` | Нужен **пароль приложения**, не пароль от сайта |
+| Письма не доходят | Проверьте «Спам»; не шлите много одинаковых подряд |
+| Заявки не пишутся в Supabase | Проверьте Vercel Logs `[supabase]`; убедитесь что таблица создана и ключ `service_role` |
+| `Function Runtimes must have a valid version` | В `vercel.json` удалите `"runtime": "nodejs20.x"` — версия берётся из `engines` в `package.json` |

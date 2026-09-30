@@ -1,78 +1,5 @@
-import dotenv from 'dotenv';
-import express from 'express';
-import cors from 'cors';
 import nodemailer from 'nodemailer';
-import { createClient } from '@libsql/client';
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '.env') });
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
-const app = express();
-const PORT = process.env.PORT || 3456;
-const ROOT = path.join(__dirname, '..');
-const isVercel = Boolean(process.env.VERCEL);
-const localDbPath = process.env.DATABASE_PATH || path.join(__dirname, 'submissions.db');
-
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(ROOT));
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Не задана переменная окружения ${name}. Скопируйте .env.example в .env и заполните данные.`);
-  }
-  return value;
-}
-
-function createDb() {
-  const url = process.env.TURSO_DATABASE_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN;
-  if (url) {
-    if (!authToken) {
-      throw new Error('Задана TURSO_DATABASE_URL, но нет TURSO_AUTH_TOKEN.');
-    }
-    return createClient({ url, authToken });
-  }
-  if (isVercel) {
-    throw new Error('На Vercel задайте TURSO_DATABASE_URL и TURSO_AUTH_TOKEN — иначе заявки не сохранятся.');
-  }
-  return createClient({ url: pathToFileURL(localDbPath).href });
-}
-
-const db = createDb();
-await db.execute(`
-  CREATE TABLE IF NOT EXISTS form_submissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    name TEXT NOT NULL,
-    company TEXT,
-    phone TEXT NOT NULL,
-    email TEXT NOT NULL,
-    calculation_json TEXT
-  )
-`);
-
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: requireEnv('SMTP_HOST'),
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: process.env.SMTP_SECURE !== 'false',
-    auth: {
-      user: requireEnv('SMTP_USER'),
-      pass: requireEnv('SMTP_PASS'),
-    },
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 100,
-  });
-}
-
-const transporter = createTransporter();
-const smtpFrom = process.env.SMTP_FROM || requireEnv('SMTP_USER');
+import { createClient } from '@supabase/supabase-js';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -95,7 +22,6 @@ function buildLineItemsTable(lines, qtyLabel) {
       <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#555;">${line.qty ?? qtyLabel ?? '—'}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-weight:600;">${line.total != null ? formatRub(line.total) : '—'}</td>
     </tr>`).join('');
-
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0 0;">
       <thead>
@@ -117,7 +43,6 @@ function buildSubscriptionLinesTable(lines) {
       <td style="padding:10px 12px;border-bottom:1px solid #fde8e6;color:#333;">${escapeHtml(line.label)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #fde8e6;text-align:right;white-space:nowrap;font-weight:600;color:#EF3124;">+ ${formatRub(line.amount)}/мес</td>
     </tr>`).join('');
-
   return `
     <table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0 0;">
       <thead>
@@ -128,6 +53,31 @@ function buildSubscriptionLinesTable(lines) {
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Не задана переменная окружения ${name}. Заполните SMTP-данные в настройках Vercel.`);
+  return value;
+}
+
+function getTransporter() {
+  return nodemailer.createTransport({
+    host: requireEnv('SMTP_HOST'),
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: process.env.SMTP_SECURE !== 'false',
+    auth: {
+      user: requireEnv('SMTP_USER'),
+      pass: requireEnv('SMTP_PASS'),
+    },
+  });
+}
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 function buildEmailHtml({ name, company, phone, calculation: c }) {
@@ -268,32 +218,38 @@ function buildEmailHtml({ name, company, phone, calculation: c }) {
 </html>`;
 }
 
-async function logSubmission({ name, company, phone, email, calculation }) {
-  await db.execute({
-    sql: `INSERT INTO form_submissions (name, company, phone, email, calculation_json)
-          VALUES (?, ?, ?, ?, ?)`,
-    args: [name, company || null, phone, email, JSON.stringify(calculation)],
-  });
+async function logToSupabase(supabase, { name, company, phone, email, calculation }) {
+  try {
+    const { error } = await supabase.from('form_submissions').insert({
+      name,
+      company: company || null,
+      phone,
+      email,
+      calculation_json: calculation,
+    });
+    if (error) {
+      console.error('[supabase] insert error:', error.message, '| code:', error.code);
+    } else {
+      console.log('[supabase] submission logged:', email);
+    }
+  } catch (err) {
+    console.error('[supabase] unexpected error:', err.message);
+  }
 }
 
-async function sendCalculationEmail({ name, company, phone, email, calculation }) {
-  await transporter.sendMail({
-    from: smtpFrom,
-    to: email,
-    subject: `Расчёт экономики: кассы самообслуживания — ${calculation.registers} касс`,
-    html: buildEmailHtml({ name, company, phone, calculation }),
-  });
-}
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-app.post('/api/send-calculation', async (req, res) => {
   try {
     const { name, company, phone, email, calculation } = req.body;
 
-    if (!name?.trim() || !phone?.trim() || !email?.trim() || !company?.trim()) {
-      return res.status(400).json({ error: 'Заполните ФИО, компанию, телефон и email.' });
+    if (!name?.trim() || !phone?.trim() || !email?.trim()) {
+      return res.status(400).json({ error: 'Заполните все обязательные поля.' });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email)) {
       return res.status(400).json({ error: 'Некорректный адрес email.' });
     }
 
@@ -301,55 +257,41 @@ app.post('/api/send-calculation', async (req, res) => {
       return res.status(400).json({ error: 'Данные расчёта отсутствуют. Пройдите все шаги калькулятора.' });
     }
 
-    const payload = {
-      name: name.trim(),
-      company: company.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      calculation,
-    };
+    const transporter = getTransporter();
+    const from = process.env.SMTP_FROM || requireEnv('SMTP_USER');
 
-    await logSubmission(payload);
-    res.json({ ok: true });
-
-    sendCalculationEmail(payload).catch((err) => {
-      console.error(`Ошибка фоновой отправки (${payload.email}):`, err.message);
+    await transporter.sendMail({
+      from,
+      to: email.trim(),
+      subject: `Расчёт экономики: кассы самообслуживания — ${calculation.registers} касс`,
+      html: buildEmailHtml({
+        name: name.trim(),
+        company: company?.trim(),
+        phone: phone.trim(),
+        calculation,
+      }),
     });
+
+    const supabase = getSupabase();
+    if (supabase) {
+      await logToSupabase(supabase, {
+        name: name.trim(),
+        company: company?.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        calculation,
+      });
+    } else {
+      console.warn('[supabase] not configured — SUPABASE_URL or SUPABASE_SERVICE_KEY missing');
+    }
+
+    console.log(`[send-calculation] sent to ${email.trim()}, registers=${calculation.registers}`);
+    res.json({ ok: true });
   } catch (err) {
-    console.error('Ошибка приёма заявки:', err.message);
-    res.status(500).json({ error: 'Не удалось сохранить заявку.' });
+    console.error('[send-calculation] error:', err.message);
+    const message = err.message.includes('SMTP') || err.message.includes('окружения')
+      ? err.message
+      : 'Не удалось отправить письмо. Проверьте SMTP-настройки.';
+    res.status(500).json({ error: message });
   }
-});
-
-app.get('/api/submissions', async (_req, res) => {
-  try {
-    const result = await db.execute(`
-      SELECT id, created_at, name, company, phone, email, calculation_json
-      FROM form_submissions
-      ORDER BY id DESC
-      LIMIT 200
-    `);
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Ошибка чтения заявок:', err.message);
-    res.status(500).json({ error: 'Не удалось прочитать заявки.' });
-  }
-});
-
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(ROOT, 'index.html'));
-});
-
-export default app;
-
-if (!isVercel) {
-  app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
-    console.log(`\n  Калькулятор:  http://localhost:${PORT}/`);
-    console.log(`  API:          http://localhost:${PORT}/api/send-calculation`);
-    console.log(`  База данных:  ${process.env.TURSO_DATABASE_URL || localDbPath}\n`);
-
-    transporter.verify()
-      .then(() => console.log('  SMTP:         подключение OK\n'))
-      .catch((err) => console.warn(`  SMTP:         проверка не прошла — ${err.message}\n`));
-  });
 }

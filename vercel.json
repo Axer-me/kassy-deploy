@@ -1,6 +1,4 @@
 {
-  "buildCommand": "node scripts/copy-public.mjs",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" }
-  ]
+  "version": 2,
+  "framework": null
 }

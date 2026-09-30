@@ -1,18 +1,18 @@
 # Dependencies
 node_modules/
-pulse-client/node_modules/
-kassa-email-server/node_modules/
 
 # Environment & secrets
 .env
 .env.*
 !.env.example
 
-# Build output
+# Vercel
+.vercel/
+
+# Build output & logs
 *.log
-public/
-kassa-email-server/submissions.db
-kassa-email-server/submissions.db-*
+submissions.db
+submissions.db-*
 
 # OS / IDE
 .cursor/
