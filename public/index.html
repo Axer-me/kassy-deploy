@@ -332,6 +332,7 @@
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
     }
 
     .screen-2,
@@ -1025,6 +1026,33 @@
       .stepper-btn {
         width: 56px;
         height: 56px;
+      }
+    }
+
+    @media (max-width: 600px), (max-height: 640px) and (max-width: 1023px) {
+      .comparison {
+        flex: 0 0 auto;
+        min-height: auto;
+      }
+
+      .compare-card {
+        overflow: visible;
+      }
+
+      .insight-banner {
+        margin-top: 12px;
+        flex-shrink: 0;
+      }
+
+      .screen-4-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 6;
+        flex-shrink: 0;
+        background: var(--bg);
+        margin-top: 8px;
+        padding-top: 10px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
       }
     }
 
