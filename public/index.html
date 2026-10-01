@@ -14,7 +14,7 @@
       if (screen) screen.scrollTop = 0;
     }
 
-    var registers = 50;
+    var registers = 15;
     var years = 3;
     var calcResult = null;
     var BASE_MONTHLY = 6990;
@@ -85,9 +85,12 @@
       if (el) el.value = String(n);
     }
 
+    var registersNumpadFresh = false;
+
     function changeRegisters(delta) {
       registers = clampRegisters(registers + delta);
       setRegistersDisplay(registers);
+      registersNumpadFresh = true;
     }
 
     function onRegistersInput() {
@@ -102,8 +105,48 @@
       var el = document.getElementById('registers-count');
       if (!el) return;
       var digits = String(el.value || '').replace(/\D/g, '');
-      registers = digits ? clampRegisters(digits) : (registers || 50);
+      registers = digits ? clampRegisters(digits) : (registers || 15);
       setRegistersDisplay(registers);
+    }
+
+    function openRegistersNumpad() {
+      var pad = document.getElementById('registers-numpad');
+      if (!pad || !pad.hidden) return;
+      pad.hidden = false;
+      registersNumpadFresh = true;
+    }
+
+    function closeRegistersNumpad() {
+      var pad = document.getElementById('registers-numpad');
+      if (!pad || pad.hidden) return;
+      pad.hidden = true;
+      onRegistersCommit();
+    }
+
+    function applyRegistersDigits(digits) {
+      var el = document.getElementById('registers-count');
+      if (!el) return;
+      digits = String(digits || '').replace(/\D/g, '').slice(0, 3);
+      el.value = digits;
+      if (digits) registers = clampRegisters(digits);
+    }
+
+    function handleRegistersNumpad(action) {
+      var el = document.getElementById('registers-count');
+      if (!el) return;
+      if (action === 'done') {
+        closeRegistersNumpad();
+        return;
+      }
+      if (action === 'back') {
+        var cur = registersNumpadFresh ? '' : String(el.value || '').slice(0, -1);
+        registersNumpadFresh = false;
+        applyRegistersDigits(cur);
+        return;
+      }
+      var next = registersNumpadFresh ? String(action) : (String(el.value || '') + String(action));
+      registersNumpadFresh = false;
+      applyRegistersDigits(next);
     }
 
     function setPeriod(y) {
@@ -654,10 +697,63 @@
       -webkit-appearance: none;
       appearance: none;
       border-radius: 0;
+      cursor: pointer;
+      caret-color: transparent;
     }
 
     .stepper-value:focus {
       background: rgba(255, 255, 255, .06);
+    }
+
+    .registers-numpad {
+      margin-top: 12px;
+      background: var(--surface);
+      border-radius: var(--radius-md);
+      padding: 12px;
+    }
+
+    .registers-numpad[hidden] {
+      display: none !important;
+    }
+
+    .registers-numpad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .numpad-key {
+      height: 64px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 26px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      transition: opacity .15s, background .15s;
+    }
+
+    .numpad-key:active {
+      opacity: .85;
+      background: #333;
+    }
+
+    .numpad-key.numpad-action {
+      font-size: 22px;
+      font-weight: 500;
+    }
+
+    .numpad-key.numpad-done {
+      background: var(--red);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
     }
 
     .period-tabs {
@@ -1258,15 +1354,32 @@
           id="registers-count"
           class="stepper-value"
           type="text"
-          inputmode="numeric"
+          inputmode="none"
           pattern="[0-9]*"
           maxlength="3"
           autocomplete="off"
           enterkeyhint="done"
           aria-label="Количество касс"
-          value="50"
+          value="15"
+          readonly
         >
         <button type="button" class="stepper-btn plus" onclick="changeRegisters(1)" aria-label="Больше касс">+</button>
+      </div>
+      <div id="registers-numpad" class="registers-numpad" hidden aria-label="Цифровая клавиатура">
+        <div class="registers-numpad-grid">
+          <button type="button" class="numpad-key" data-numpad="1">1</button>
+          <button type="button" class="numpad-key" data-numpad="2">2</button>
+          <button type="button" class="numpad-key" data-numpad="3">3</button>
+          <button type="button" class="numpad-key" data-numpad="4">4</button>
+          <button type="button" class="numpad-key" data-numpad="5">5</button>
+          <button type="button" class="numpad-key" data-numpad="6">6</button>
+          <button type="button" class="numpad-key" data-numpad="7">7</button>
+          <button type="button" class="numpad-key" data-numpad="8">8</button>
+          <button type="button" class="numpad-key" data-numpad="9">9</button>
+          <button type="button" class="numpad-key numpad-action" data-numpad="back" aria-label="Удалить">⌫</button>
+          <button type="button" class="numpad-key" data-numpad="0">0</button>
+          <button type="button" class="numpad-key numpad-done" data-numpad="done">Готово</button>
+        </div>
       </div>
     </div>
 
@@ -1298,7 +1411,7 @@
     <div class="page-title">
       <h2>Расчет для вашего бизнеса</h2>
     </div>
-    <div class="subtitle" id="calc-subtitle">50 касс на 3 года</div>
+    <div class="subtitle" id="calc-subtitle">15 касс на 3 года</div>
 
     <div class="comparison">
       <div class="compare-card purchase">
@@ -1313,7 +1426,7 @@
         <div class="line-item bold"><span>Полная комплектация</span><span class="val" id="r-full-kit">—</span></div>
         <div class="line-item"><span>Обслуживание на <span id="p-years">3</span> года</span><span class="val" id="r-service">—</span></div>
         <div class="line-item"><span>На 1 КСО за период</span><span class="val" id="r-unit-purchase">—</span></div>
-        <div class="line-item bold"><span>Количество касс</span><span class="val" id="p-count">50</span></div>
+        <div class="line-item bold"><span>Количество касс</span><span class="val" id="p-count">15</span></div>
 
         <div class="warnings">
           <div class="warning-item">⚠ Заморозка активов</div>
@@ -1330,7 +1443,7 @@
         <div class="line-item"><span>Касса в месяц</span><span class="val" id="r-monthly">—</span></div>
         <div class="line-item"><span>Платёж в месяц (все кассы)</span><span class="val" id="r-monthly-payment">—</span></div>
         <div class="line-item"><span>Кол-во месяцев</span><span class="val" id="s-months">36</span></div>
-        <div class="line-item"><span>Кол-во касс</span><span class="val" id="s-count">50</span></div>
+        <div class="line-item"><span>Кол-во касс</span><span class="val" id="s-count">15</span></div>
 
         <div class="benefits">
           <div class="benefit-item"><span class="check">✓</span><span>Специальные условия на торговый эквайринг</span></div>
@@ -1525,16 +1638,30 @@
 
   function initRegistersField() {
     var el = document.getElementById('registers-count');
-    if (!el) return;
-    el.addEventListener('input', onRegistersInput);
-    el.addEventListener('change', onRegistersCommit);
-    el.addEventListener('blur', onRegistersCommit);
-    el.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        onRegistersCommit();
-        el.blur();
-      }
+    var pad = document.getElementById('registers-numpad');
+    if (!el || !pad) return;
+
+    el.addEventListener('focus', openRegistersNumpad);
+    el.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      el.focus();
+      openRegistersNumpad();
+    });
+
+    pad.addEventListener('pointerdown', function(e) {
+      var btn = e.target.closest('[data-numpad]');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleRegistersNumpad(btn.getAttribute('data-numpad'));
+    });
+
+    document.addEventListener('pointerdown', function(e) {
+      if (pad.hidden) return;
+      if (el.contains(e.target) || pad.contains(e.target)) return;
+      var stepper = el.closest('.stepper');
+      if (stepper && stepper.contains(e.target)) return;
+      closeRegistersNumpad();
     });
   }
 
